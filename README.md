@@ -1,0 +1,1 @@
+To see the graphs, run "python -m bokeh serve --show interactive_bokeh.py" from the command line/terminal after navigating to where the "interactive_bokeh.py" file is located. May need to update paths in python file based on your file organization.
