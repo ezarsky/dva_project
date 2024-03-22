@@ -1,1 +1,1 @@
-The main data file "2019_06.csv" must be unziped from "2019_06.zip". I did this as it is 7x larger uncompressed.
+Download: https://drive.google.com/file/d/1zDyK24WsjHsDvtVmlgHo7LJC1H79fDuz/view?usp=sharing. The main data file "2019_06.csv" must be unziped from "2019_06.zip". I did this as it is 7x larger uncompressed.
