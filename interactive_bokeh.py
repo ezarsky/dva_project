@@ -15,8 +15,8 @@ from bokeh.models import (ColumnDataSource, DataTable, MultiLine, Range1d,
 ### Data Import ###
 ###################
 # import data and lookup table for airport codes
-data_path = "../airline_data/2019_06.csv"
-lookup_path = "../airline_data/airport_lookup.csv"
+data_path = "2019_06.csv"
+lookup_path = "airport_lookup.csv"
 
 data = pd.read_csv(data_path)
 keep = ["MONTH", "DAY_OF_MONTH", "ORIGIN_AIRPORT_ID", "ORIGIN", 
@@ -240,11 +240,13 @@ pct_plot.yaxis.axis_label = "% of flights on route"
 
 
 # function for filtering data to only selected origin and destination
-def route_score(avg_delay):
-    route_scores = ["A", "B", "C", "D", "F"]
-    if avg_delay < -5:
+def route_score(avg_delay, num_flights):
+    route_scores = ["A", "B", "C", "D", "F", "insufficient volume"]
+    if num_flights < 50:
+        return route_scores[5]  # return insufficient volume if less than 50 flights
+    elif avg_delay < -5 and num_flights > 300:
         return route_scores[0]
-    elif avg_delay < 0:
+    elif avg_delay < 0 and num_flights > 200:
         return route_scores[1]
     elif avg_delay < 5:
         return route_scores[2]
@@ -316,7 +318,7 @@ def update():
             summary_data["stat_values"][2] = "Late by {} minutes".format(pred)
         
         # TODO: fill with real score
-        summary_data["stat_values"][3] = route_score(typical)
+        summary_data["stat_values"][3] = route_score(typical, int(d_stats["count"]))
         
         sum_source.data = summary_data
         
