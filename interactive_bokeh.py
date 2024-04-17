@@ -1,11 +1,12 @@
-import pandas as pd
-import numpy as np
-import networkx as nx
-from bokeh.plotting import figure, from_networkx, show
+from bokeh.plotting import figure, from_networkx
 from bokeh.io import curdoc
 from bokeh.layouts import layout
 from bokeh.models import (ColumnDataSource, DataTable, MultiLine, Range1d, 
                           Scatter, Select, StringFormatter, TableColumn)
+import joblib
+import networkx as nx
+import numpy as np
+import pandas as pd
 
 # uncomment to work in jupyter notebook, use "show" to see results
 #from bokeh.io import output_notebook
@@ -15,19 +16,13 @@ from bokeh.models import (ColumnDataSource, DataTable, MultiLine, Range1d,
 ### Data Import ###
 ###################
 # import data and lookup table for airport codes
-data_path = "2019_06.csv"
-lookup_path = "airport_lookup.csv"
+data_path = "../airline_data/2019top30data.csv"
+lookup_path = "../airline_data/airport_lookup.csv"
 
 data = pd.read_csv(data_path)
-keep = ["MONTH", "DAY_OF_MONTH", "ORIGIN_AIRPORT_ID", "ORIGIN", 
-        "DEST_AIRPORT_ID", "DEST", "DEP_DELAY", "ARR_DELAY", 
-        "CANCELLED", "CRS_ELAPSED_TIME", "ACTUAL_ELAPSED_TIME"]
-
-data = data[keep]
 
 code_lookup = pd.read_csv(lookup_path)
 
-data.loc[:, "OVERALL_DELAY"] = data.apply(lambda x: x["ACTUAL_ELAPSED_TIME"] - x["CRS_ELAPSED_TIME"], axis = 1) 
 
 #####################
 ### Data Cleaning ###
@@ -43,7 +38,7 @@ top_30_airports_iata = ["ATL", "DFW", "DEN", "ORD", "LAX",
                         "BOS", "FLL", "MSP", "LGA", "DTW",
                         "PHL", "SLC", "DCA", "SAN", "BWI",
                         "TPA", "AUS", "IAD", "BNA", "MDW"]
-top_count = 20
+top_count = 30
 top_airports = top_30_airports_iata[:top_count]
 data = data[data["ORIGIN"].isin(top_airports) & data["DEST"].isin(top_airports)]
 code_lookup = code_lookup[code_lookup["code_iata"].isin(top_airports)]
@@ -117,7 +112,7 @@ bgcolor = "ghostwhite"
 ddcolor = "midnightblue"
 selected_edge_color = "#333333"
 other_edge_color = "#dddddd"
-# TODO: incorporate modeling and metrics in node and edge info
+# incorporate modeling and metrics in node and edge info
 # create Graph
 airport_graph = nx.Graph()
 for airport in airports:
@@ -143,8 +138,6 @@ for start_node, end_node, _ in airport_graph.edges(data=True):
 nx.set_edge_attributes(airport_graph, edge_attr, "edge_color")
 
 pos = nx.get_node_attributes(airport_graph, 'pos')
-
-#nx.draw(airport_graph, pos, with_labels=True)
 
 ##########################
 ### Interactive Visual ###
@@ -241,7 +234,7 @@ pct_plot.yaxis.axis_label = "% of flights on route"
 
 # function for filtering data to only selected origin and destination
 def route_score(avg_delay, num_flights):
-    route_scores = ["A", "B", "C", "D", "F", "insufficient volume"]
+    route_scores = ["A", "B", "C", "D", "F", "Insufficient Volume"]
     if num_flights < 50:
         return route_scores[5]  # return insufficient volume if less than 50 flights
     elif avg_delay < -5 and num_flights > 300:
@@ -264,16 +257,20 @@ def select_flights():
     to_dot = int(code_lookup.loc[code_lookup["code_iata"] == to_iata, "code_dot"].values[0])
     # handle case of same origin and destination (no update)
     if from_dot != to_dot:
-        selection_data = data.loc[flight_pairs_dict[(from_dot, to_dot)]]
-        """
-        if month == "All":
+        try:
             selection_data = data.loc[flight_pairs_dict[(from_dot, to_dot)]]
-        else:
-            month = months.index(month)
-            selection_data = data[data["MONTH"] == month]
-            selection_data = selection_data.loc[flight_pairs_dict[(from_dot, to_dot)]]
-        """
-        return selection_data
+            """
+            if month == "All":
+                selection_data = data.loc[flight_pairs_dict[(from_dot, to_dot)]]
+            else:
+                month = months.index(month)
+                selection_data = data[data["MONTH"] == month]
+                selection_data = selection_data.loc[flight_pairs_dict[(from_dot, to_dot)]]
+            """
+            return selection_data
+        except:
+            selection_data = pd.DataFrame(columns=data.columns)
+            return selection_data
 
 # function for updating data sources based on selections
 def update():
@@ -283,8 +280,7 @@ def update():
     if from_iata != to_iata:
         selection_data = select_flights()
         n = selection_data.shape[0]
-        
-        
+
         # update network graph
         edge_attr = {}
         for start_node, end_node, _ in airport_graph.edges(data=True):
@@ -300,54 +296,71 @@ def update():
         network.node_renderer.glyph = Scatter(size=15, fill_color="cornflowerblue")
         network.edge_renderer.glyph = MultiLine(line_color="edge_color", line_alpha=1, line_width=2)
         network_plot.renderers.append(network)
-        
-        # update summary data
-        d_stats = selection_data["OVERALL_DELAY"].describe()
-        summary_data["stat_values"][0] = int(d_stats["count"])
-        typical = int(d_stats["mean"])
-        if typical < 0:
-            summary_data["stat_values"][1] = "Early by {} minutes".format(-typical)
+
+        # if no data are encountered for selected airports, report no data 
+        if n == 0:
+            for i in range(len(summary_data["stat_values"])):
+                summary_data["stat_values"][i] = "No flight data available"
+            sum_source.data = summary_data
+            
+            ovr_source.data = dict(
+                top_locs = [],
+                left_locs = [],
+                right_locs = []
+                )
+            pct_source.data = dict(
+                    labels = pct_labels,
+                    top_locs = [0]*len(pct_labels)
+                )
+            
+        # if data available, update drilldown graphics
         else:
-            summary_data["stat_values"][1] = "Late by {} minutes".format(typical)
+            # update summary data
+            d_stats = selection_data["OVERALL_DELAY"].describe()
+            summary_data["stat_values"][0] = int(d_stats["count"])
+            typical = int(d_stats["mean"])
+            if typical < 0:
+                summary_data["stat_values"][1] = "Early by {} minutes".format(-typical)
+            else:
+                summary_data["stat_values"][1] = "Late by {} minutes".format(typical)
+            
+            # TODO: fill with real prediction
+            pred = int(np.random.normal(0, 10))
+            if pred < 0:
+                summary_data["stat_values"][2] = "Early by {} minutes".format(-pred)
+            else:
+                summary_data["stat_values"][2] = "Late by {} minutes".format(pred)
+            
+            # fill with real score
+            summary_data["stat_values"][3] = route_score(typical, int(d_stats["count"]))
+            
+            sum_source.data = summary_data
+            
+            
+            # update overall delay data
+            ovr_hist, ovr_edges = np.histogram(selection_data["OVERALL_DELAY"].dropna())
+            ovr_source.data = dict(
+                top_locs = ovr_hist,
+                left_locs = ovr_edges[:-1],
+                right_locs = ovr_edges[1:]
+                )
+            
+            # update percent delayed and cancelled
+            dep_delays = selection_data[selection_data["DEP_DELAY"] > 0].shape[0]
+            arr_delays = selection_data[selection_data["ARR_DELAY"] > 0].shape[0]
         
-        # TODO: fill with real prediction
-        pred = int(np.random.normal(0, 10))
-        if pred < 0:
-            summary_data["stat_values"][2] = "Early by {} minutes".format(-pred)
-        else:
-            summary_data["stat_values"][2] = "Late by {} minutes".format(pred)
+            dep_delay_pct = dep_delays/n*100
+            arr_delay_pct = arr_delays/n*100
         
-        # TODO: fill with real score
-        summary_data["stat_values"][3] = route_score(typical, int(d_stats["count"]))
+            cancelled = selection_data[selection_data["CANCELLED"] == 1].shape[0]
+            cancelled_pct = cancelled/n*100
         
-        sum_source.data = summary_data
-        
-        
-        # update overall delay data
-        ovr_hist, ovr_edges = np.histogram(selection_data["OVERALL_DELAY"].dropna())
-        ovr_source.data = dict(
-            top_locs = ovr_hist,
-            left_locs = ovr_edges[:-1],
-            right_locs = ovr_edges[1:]
-            )
-        
-        # update percent delayed and cancelled
-        dep_delays = selection_data[selection_data["DEP_DELAY"] > 0].shape[0]
-        arr_delays = selection_data[selection_data["ARR_DELAY"] > 0].shape[0]
-    
-        dep_delay_pct = dep_delays/n*100
-        arr_delay_pct = arr_delays/n*100
-    
-        cancelled = selection_data[selection_data["CANCELLED"] == 1].shape[0]
-        cancelled_pct = cancelled/n*100
-    
-        pct_heights = [dep_delay_pct, arr_delay_pct, cancelled_pct]
-        pct_source.data = dict(
-                labels = pct_labels,
-                top_locs = pct_heights
-            )
-        
-        
+            pct_heights = [dep_delay_pct, arr_delay_pct, cancelled_pct]
+            pct_source.data = dict(
+                    labels = pct_labels,
+                    top_locs = pct_heights
+                )
+
 
 # link select tools to update function
 #controls = [month_select, from_select, to_select]
