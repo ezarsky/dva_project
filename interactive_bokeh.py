@@ -17,10 +17,11 @@ from sklearn.ensemble import RandomForestRegressor
 ### Data Import ###
 ###################
 # import data and lookup table for airport codes
-data_path = "../airline_data/2019top30data.csv"
+data_path = "../airline_data/2019top30data.parquet"
 lookup_path = "../airline_data/airport_lookup.csv"
 
-data = pd.read_csv(data_path)
+
+data = pd.read_parquet(data_path, engine="fastparquet")
 data = data.dropna()
 
 code_lookup = pd.read_csv(lookup_path)
