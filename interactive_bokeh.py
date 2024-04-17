@@ -7,6 +7,7 @@ import joblib
 import networkx as nx
 import numpy as np
 import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
 
 # uncomment to work in jupyter notebook, use "show" to see results
 #from bokeh.io import output_notebook
@@ -20,9 +21,11 @@ data_path = "../airline_data/2019top30data.csv"
 lookup_path = "../airline_data/airport_lookup.csv"
 
 data = pd.read_csv(data_path)
+data = data.dropna()
 
 code_lookup = pd.read_csv(lookup_path)
 
+rf_model = joblib.load('rf_model.joblib')
 
 #####################
 ### Data Cleaning ###
@@ -285,18 +288,25 @@ def update():
         edge_attr = {}
         for start_node, end_node, _ in airport_graph.edges(data=True):
             edge_color = other_edge_color
+            edge_alpha = 0.1
             from_cond = (airport_graph.nodes[start_node]["iata_code"] == from_iata) or (airport_graph.nodes[end_node]["iata_code"] == from_iata)
             to_cond = (airport_graph.nodes[start_node]["iata_code"] == to_iata) or (airport_graph.nodes[end_node]["iata_code"] == to_iata)
             if from_cond and to_cond:
                 edge_color = selected_edge_color
-            edge_attr[(start_node, end_node)] = edge_color
+                edge_alpha = 1
+            edge_attr[(start_node, end_node)] = {"edge_color": edge_color,
+                                                 "edge_alpha": edge_alpha}
         
-        nx.set_edge_attributes(airport_graph, edge_attr, "edge_color")
+        #nx.set_edge_attributes(airport_graph, edge_attr, "edge_color")
+        nx.set_edge_attributes(airport_graph, edge_attr)
         network = from_networkx(airport_graph, pos)
         network.node_renderer.glyph = Scatter(size=15, fill_color="cornflowerblue")
-        network.edge_renderer.glyph = MultiLine(line_color="edge_color", line_alpha=1, line_width=2)
-        network_plot.renderers.append(network)
-
+        network.edge_renderer.glyph = MultiLine(line_color="edge_color", line_alpha="edge_alpha", line_width=2)
+        if len(network_plot.renderers) == 0:
+            network_plot.renderers.append(network)
+        else: 
+            network_plot.renderers[0] = network
+        
         # if no data are encountered for selected airports, report no data 
         if n == 0:
             for i in range(len(summary_data["stat_values"])):
@@ -325,7 +335,8 @@ def update():
                 summary_data["stat_values"][1] = "Late by {} minutes".format(typical)
             
             # TODO: fill with real prediction
-            pred = int(np.random.normal(0, 10))
+            X = selection_data[["MONTH", "DAY_OF_MONTH", "ORIGIN_AIRPORT_ID", "DEST_AIRPORT_ID"]]
+            pred = int(np.mean(rf_model.predict(X)))
             if pred < 0:
                 summary_data["stat_values"][2] = "Early by {} minutes".format(-pred)
             else:
