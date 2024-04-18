@@ -221,7 +221,7 @@ pct_source = ColumnDataSource(data = dict(
 TOOLTIPS = [
     ("Airport", "@name"),
     ("City", "@{city}"),
-    ("Flight count", "@flight_count")
+    ("Flights in 2019", "@flight_count")
 ]
 ##################
 ### Plot Setup ###
