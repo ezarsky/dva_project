@@ -8,6 +8,7 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 
+import matplotlib.pyplot as plt
 ###################
 ### Data Import ###
 ###################
@@ -246,7 +247,7 @@ data_table = DataTable(source=sum_source, columns=columns, width=w, height=h,
 # initialize overall delays plot
 ovr_plot = figure(width = w, height = h, sizing_mode="fixed", 
                   toolbar_location=None, title="Delay Lengths (minutes)",
-                  background_fill_color=bgcolor)
+                  background_fill_color=bgcolor, x_range=Range1d(-50, 150))
 ovr_plot.quad(top="top_locs", bottom=0, left="left_locs", right="right_locs",
               source=ovr_source, fill_color=ddcolor, line_color="white")
 ovr_plot.y_range.start=0
@@ -329,10 +330,10 @@ def update():
     # handle case of same origin and destination (no update)
     from_iata = from_select.value[-4:-1]
     to_iata = to_select.value[-4:-1]
+    selection_data = pd.DataFrame(columns=data.columns)
     if from_iata != to_iata:
         # if different origin and destination, call select_flights()
         selection_data = select_flights()
-        n = selection_data.shape[0]
         
         # update network graph
         edge_attr = {}
@@ -368,87 +369,87 @@ def update():
             network_plot.renderers.append(network)
         else: 
             network_plot.renderers[0] = network
+    
+    # if no data are encountered for selected airports, report no data 
+    n = selection_data.shape[0]
+    if n == 0:
+        for i in range(len(summary_data["stat_values"])):
+            summary_data["stat_values"][i] = "No flight data available"
+        sum_source.data = summary_data
         
-        # if no data are encountered for selected airports, report no data 
-        if n == 0:
-            for i in range(len(summary_data["stat_values"])):
-                summary_data["stat_values"][i] = "No flight data available"
-            sum_source.data = summary_data
-            
-            ovr_source.data = dict(
-                top_locs = [],
-                left_locs = [],
-                right_locs = []
-                )
-            pct_source.data = dict(
-                    labels = pct_labels,
-                    top_locs = [0]*len(pct_labels)
-                )
-            
-        # if data available, update drilldown graphics
+        ovr_source.data = dict(
+            top_locs = [],
+            left_locs = [],
+            right_locs = []
+            )
+        pct_source.data = dict(
+                labels = pct_labels,
+                top_locs = [0]*len(pct_labels)
+            )
+        
+    # if data available, update drilldown graphics
+    else:
+        # update summary data
+        d_stats = selection_data["OVERALL_DELAY"].describe()
+        summary_data["stat_values"][0] = int(d_stats["count"])
+        avg_delay = round((d_stats["mean"]), 2)
+        std_delay = round(d_stats["std"], 2)
+        if avg_delay < 0:
+            summary_data["stat_values"][1] = "Early by {} minutes".format(-avg_delay)
         else:
-            # update summary data
-            d_stats = selection_data["OVERALL_DELAY"].describe()
-            summary_data["stat_values"][0] = int(d_stats["count"])
-            avg_delay = round((d_stats["mean"]), 2)
-            std_delay = round(d_stats["std"], 2)
-            if avg_delay < 0:
-                summary_data["stat_values"][1] = "Early by {} minutes".format(-avg_delay)
-            else:
-                summary_data["stat_values"][1] = "Late by {} minutes".format(avg_delay)
-            
-            
-            # use random forest to predict delays on route
-            X = selection_data[feature_cols]
-            preds = rf_model.predict(X)
-            
-            # calculate high, low, and average delay prediction
-            min_pred = round(np.min(preds), 2)
-            avg_pred = round(np.mean(preds), 2)
-            max_pred = round(np.max(preds), 2)
-            
-            # report high, low, and average delay prediction in bokeh table
-            if min_pred < 0:
-                summary_data["stat_values"][2] = "Early by {} minutes".format(-min_pred)
-            else:
-                summary_data["stat_values"][2] = "Late by {} minutes".format(min_pred)
-            
-            if avg_pred < 0:
-                summary_data["stat_values"][3] = "Early by {} minutes".format(-avg_pred)
-            else:
-                summary_data["stat_values"][3] = "Late by {} minutes".format(avg_pred)
-            
-            if max_pred < 0:
-                summary_data["stat_values"][4] = "Early by {} minutes".format(-max_pred)
-            else:
-                summary_data["stat_values"][4] = "Late by {} minutes".format(max_pred)
-            
-            # report score
-            summary_data["stat_values"][5] = route_score(avg_delay, std_delay, int(d_stats["count"]))
-            sum_source.data = summary_data
-            
-            
-            # update overall delay data
-            ovr_hist, ovr_edges = np.histogram(selection_data["OVERALL_DELAY"].dropna())
-            ovr_source.data = dict(
-                top_locs = ovr_hist,
-                left_locs = ovr_edges[:-1],
-                right_locs = ovr_edges[1:]
-                )
-            
-            # update percent delayed and cancelled
-            dep_delays = selection_data[selection_data["DEP_DELAY"] > 0].shape[0]
-            arr_delays = selection_data[selection_data["ARR_DELAY"] > 0].shape[0]
+            summary_data["stat_values"][1] = "Late by {} minutes".format(avg_delay)
         
-            dep_delay_pct = dep_delays/n*100
-            arr_delay_pct = arr_delays/n*100
         
-            pct_heights = [dep_delay_pct, arr_delay_pct]
-            pct_source.data = dict(
-                    labels = pct_labels,
-                    top_locs = pct_heights
-                )
-
+        # use random forest to predict delays on route
+        X = selection_data[feature_cols]
+        preds = rf_model.predict(X)
+        
+        # calculate high, low, and average delay prediction
+        min_pred = round(np.min(preds), 2)
+        avg_pred = round(np.mean(preds), 2)
+        max_pred = round(np.max(preds), 2)
+        
+        # report high, low, and average delay prediction in bokeh table
+        if min_pred < 0:
+            summary_data["stat_values"][2] = "Early by {} minutes".format(-min_pred)
+        else:
+            summary_data["stat_values"][2] = "Late by {} minutes".format(min_pred)
+        
+        if avg_pred < 0:
+            summary_data["stat_values"][3] = "Early by {} minutes".format(-avg_pred)
+        else:
+            summary_data["stat_values"][3] = "Late by {} minutes".format(avg_pred)
+        
+        if max_pred < 0:
+            summary_data["stat_values"][4] = "Early by {} minutes".format(-max_pred)
+        else:
+            summary_data["stat_values"][4] = "Late by {} minutes".format(max_pred)
+        
+        # report score
+        summary_data["stat_values"][5] = route_score(avg_delay, std_delay, int(d_stats["count"]))
+        sum_source.data = summary_data
+        
+        
+        # update overall delay data
+        ovr_hist, ovr_edges = np.histogram(selection_data["OVERALL_DELAY"].dropna())
+        ovr_source.data = dict(
+            top_locs = ovr_hist,
+            left_locs = ovr_edges[:-1],
+            right_locs = ovr_edges[1:]
+            )
+        
+        # update percent delayed and cancelled
+        dep_delays = selection_data[selection_data["DEP_DELAY"] > 0].shape[0]
+        arr_delays = selection_data[selection_data["ARR_DELAY"] > 0].shape[0]
+    
+        dep_delay_pct = dep_delays/n*100
+        arr_delay_pct = arr_delays/n*100
+    
+        pct_heights = [dep_delay_pct, arr_delay_pct]
+        pct_source.data = dict(
+                labels = pct_labels,
+                top_locs = pct_heights
+            )     
 
 # link select tools to update function
 controls = [month_select, day_select, airline_select, from_select, to_select]
