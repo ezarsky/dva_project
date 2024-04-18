@@ -15,16 +15,18 @@ Our tool aims to do just that. You pick the origin and destination airports, and
 This tool requires requires several Python libraries in order to run. To install all the latest versions using pip, execute the 
 commands below at the command line/terminal:
 
+### pip
 ```
-    pip install bokeh
-    pip install fastparquet
-    pip install joblib
-    pip install networkx
-    pip install numpy
-    pip install pandas
-    pip install scikit-learn
+    pip install bokeh fastparquet joblib networkx numpy pandas scikit-learn==1.4.2
 ```
+### conda
+```
+    conda install -c conda-forge bokeh fastparquet joblib networkx numpy pandas scikit-learn=1.4.2
 
+    OR in a new env:
+
+    conda create -n temporary -c conda-forge bokeh fastparquet joblib networkx numpy pandas scikit-learn=1.4.2
+```
 
 ## Running
 
